@@ -34,7 +34,6 @@ type getter interface {
 
 //FillCSV fill the local CSV with data from PokeAPI. By default will fetch from id 1 to 10 unless there are other information on the body
 func (api API) FillCSV(c *gin.Context) {
-
 	requestBody := struct {
 		From int `json:"from"`
 		To   int `json:"to"`
@@ -58,6 +57,7 @@ func (api API) FillCSV(c *gin.Context) {
 //RefreshCache feeds the csv data and save in redis
 func (api API) RefreshCache(c *gin.Context) {
 	if err := api.Refresh(c); err != nil {
+		fmt.Println(err)
 		c.Status(http.StatusInternalServerError)
 		return
 	}

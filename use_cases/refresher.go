@@ -2,13 +2,14 @@ package use_cases
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"GoConcurrency-Bootcamp-2022/models"
 )
 
 type reader interface {
-	Read() ([]models.Pokemon, error)
+	Read() (<-chan models.Pokemon, int, error)
 }
 
 type saver interface {
@@ -30,31 +31,63 @@ func NewRefresher(reader reader, saver saver, fetcher fetcher) Refresher {
 }
 
 func (r Refresher) Refresh(ctx context.Context) error {
-	pokemons, err := r.Read()
-	if err != nil {
-		return err
-	}
+	var pokeAbilities []models.Pokemon
 
-	for i, p := range pokemons {
-		urls := strings.Split(p.FlatAbilityURLs, "|")
-		var abilities []string
-		for _, url := range urls {
-			ability, err := r.FetchAbility(url)
-			if err != nil {
-				return err
+	pokemons, size, _ := r.Read()
+
+	abilities1 := getAbilities(pokemons, r)
+	abilities2 := getAbilities(pokemons, r)
+	abilities3 := getAbilities(pokemons, r)
+
+	for i := 0; i < size; i++ {
+		select {
+		case value, ok := <-abilities1:
+			if ok {
+				pokeAbilities = append(pokeAbilities, value)
 			}
-
-			for _, ee := range ability.EffectEntries {
-				abilities = append(abilities, ee.Effect)
+		case value, ok := <-abilities2:
+			if ok {
+				pokeAbilities = append(pokeAbilities, value)
+			}
+		case value, ok := <-abilities3:
+			if ok {
+				pokeAbilities = append(pokeAbilities, value)
 			}
 		}
-
-		pokemons[i].EffectEntries = abilities
 	}
 
-	if err := r.Save(ctx, pokemons); err != nil {
+	if err := r.Save(ctx, pokeAbilities); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func getAbilities(pokemons <-chan models.Pokemon, r Refresher) <-chan models.Pokemon {
+	abilitiesChan := make(chan models.Pokemon)
+
+	go func() {
+		defer close(abilitiesChan)
+
+		for p := range pokemons {
+			fmt.Println(p.ID)
+			urls := strings.Split(p.FlatAbilityURLs, "|")
+			var abilities []string
+			for _, url := range urls {
+				ability, _ := r.FetchAbility(url)
+
+				for _, ee := range ability.EffectEntries {
+					abilities = append(abilities, ee.Effect)
+				}
+			}
+
+			p.EffectEntries = abilities
+			abilitiesChan <- p
+
+		}
+
+	}()
+
+	return abilitiesChan
+
 }

@@ -2,6 +2,7 @@ package use_cases
 
 import (
 	"strings"
+	"sync"
 
 	"GoConcurrency-Bootcamp-2022/models"
 )
@@ -25,12 +26,9 @@ func NewFetcher(api api, storage writer) Fetcher {
 
 func (f Fetcher) Fetch(from, to int) error {
 	var pokemons []models.Pokemon
-	for id := from; id <= to; id++ {
-		pokemon, err := f.api.FetchPokemon(id)
-		if err != nil {
-			return err
-		}
+	var pokemonChannel = generatePokemon(from, to, f)
 
+	for pokemon := range pokemonChannel {
 		var flatAbilities []string
 		for _, t := range pokemon.Abilities {
 			flatAbilities = append(flatAbilities, t.Ability.URL)
@@ -41,4 +39,32 @@ func (f Fetcher) Fetch(from, to int) error {
 	}
 
 	return f.storage.Write(pokemons)
+}
+
+//Method to generate IDs channel
+func generatePokemon(from, to int, f Fetcher) <-chan models.Pokemon {
+	var pokemonChannel = make(chan models.Pokemon)
+	wg := sync.WaitGroup{}
+
+	for id := from; id <= to; id++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+
+			pokemon, err := f.api.FetchPokemon(id)
+			if err != nil {
+				close(pokemonChannel)
+			}
+
+			pokemonChannel <- pokemon
+
+		}(id)
+	}
+
+	go func() {
+		wg.Wait()
+		close(pokemonChannel)
+	}()
+
+	return pokemonChannel
 }
