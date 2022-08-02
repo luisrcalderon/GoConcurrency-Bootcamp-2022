@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"GoConcurrency-Bootcamp-2022/models"
 )
@@ -30,25 +31,26 @@ func (l LocalStorage) Write(pokemons []models.Pokemon) error {
 	return nil
 }
 
-func (l LocalStorage) Read() ([]models.Pokemon, error) {
+func (l LocalStorage) Read() (<-chan models.Pokemon, int, error) {
 	file, fErr := os.Open(filePath)
 	defer file.Close()
 	if fErr != nil {
-		return nil, fErr
+		return nil, 0, fErr
 	}
 
 	r := csv.NewReader(file)
 	records, rErr := r.ReadAll()
 	if rErr != nil {
-		return nil, rErr
+		return nil, 0, rErr
 	}
 
-	pokemons, err := parseCSVData(records)
+	pokemons, size, err := parseCSVData(records)
+
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
-	return pokemons, nil
+	return pokemons, size, nil
 }
 
 func buildRecords(pokemons []models.Pokemon) [][]string {
@@ -67,39 +69,43 @@ func buildRecords(pokemons []models.Pokemon) [][]string {
 	return records
 }
 
-func parseCSVData(records [][]string) ([]models.Pokemon, error) {
-	var pokemons []models.Pokemon
+func parseCSVData(records [][]string) (<-chan models.Pokemon, int, error) {
+	csvRecords := make(chan models.Pokemon)
+	wg := sync.WaitGroup{}
+	var size = 0
+
 	for i, record := range records {
 		if i == 0 {
 			continue
 		}
+		size++
+		wg.Add(1)
+		go func(record []string) {
+			defer wg.Done()
 
-		id, err := strconv.Atoi(record[0])
-		if err != nil {
-			return nil, err
-		}
+			id, _ := strconv.Atoi(record[0])
+			height, _ := strconv.Atoi(record[2])
 
-		height, err := strconv.Atoi(record[2])
-		if err != nil {
-			return nil, err
-		}
+			weight, _ := strconv.Atoi(record[3])
 
-		weight, err := strconv.Atoi(record[3])
-		if err != nil {
-			return nil, err
-		}
+			pokemon := models.Pokemon{
+				ID:              id,
+				Name:            record[1],
+				Height:          height,
+				Weight:          weight,
+				Abilities:       nil,
+				FlatAbilityURLs: record[4],
+				EffectEntries:   nil,
+			}
 
-		pokemon := models.Pokemon{
-			ID:              id,
-			Name:            record[1],
-			Height:          height,
-			Weight:          weight,
-			Abilities:       nil,
-			FlatAbilityURLs: record[4],
-			EffectEntries:   nil,
-		}
-		pokemons = append(pokemons, pokemon)
+			csvRecords <- pokemon
+		}(record)
 	}
 
-	return pokemons, nil
+	go func() {
+		wg.Wait()
+		close(csvRecords)
+	}()
+
+	return csvRecords, size, nil
 }
