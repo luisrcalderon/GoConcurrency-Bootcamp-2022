@@ -2,7 +2,6 @@ package use_cases
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"GoConcurrency-Bootcamp-2022/models"
@@ -70,7 +69,6 @@ func getAbilities(pokemons <-chan models.Pokemon, r Refresher) <-chan models.Pok
 		defer close(abilitiesChan)
 
 		for p := range pokemons {
-			fmt.Println(p.ID)
 			urls := strings.Split(p.FlatAbilityURLs, "|")
 			var abilities []string
 			for _, url := range urls {
